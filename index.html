@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Libreta Inteligente</title>
+    <style>
+        /* --- ESTILOS GENERALES Y TEMA OSCURO --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            perspective: 1500px; /* Crucial para el efecto 3D */
+        }
+
+        /* --- CONTENEDOR DE LA LIBRETA (TAPAS) --- */
+        .notebook-container {
+            position: relative;
+            width: 450px;
+            height: 600px;
+            background: #2d1a10; /* Color cuero/madera para las tapas */
+            border-radius: 12px;
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.7), 
+                        inset 0 0 20px rgba(0, 0, 0, 0.5);
+            transform-style: preserve-3d;
+            transition: transform 0.5s;
+        }
+
+        /* El lomo de la libreta */
+        .notebook-container::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 25px;
+            height: 100%;
+            background: linear-gradient(to right, #1a0f0a, #3a2215, #1a0f0a);
+            border-radius: 12px 0 0 12px;
+            z-index: 100;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.3);
+        }
+
+        /* --- LAS HOJAS --- */
+        .page {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 410px;
+            height: 570px;
+            border-radius: 4px 8px 8px 4px;
+            transform-origin: left center; /* El giro nace desde el lomo izquierdo */
+            transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+            cursor: pointer;
+            user-select: none;
+            box-shadow: inset 3px 0 10px rgba(0,0,0,0.15), 3px 3px 10px rgba(0,0,0,0.1);
+        }
+
+        /* Caras de la página (Frente y Vuelta) */
+        .page-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden; /* Oculta la cara opuesta al girar */
+            padding: 40px 30px;
+            display: flex;
+            flex-direction: column;
+            border-radius: 4px 8px 8px 4px;
+        }
+
+        /* Cara trasera (cuando se voltea) */
+        .page-back {
+            transform: rotateY(180deg);
+            border-radius: 8px 4px 4px 8px;
+        }
+
+        /* --- CONTENIDO ESCRITURABLE --- */
+        .page-number {
+            font-size: 0.85rem;
+            color: rgba(0, 0, 0, 0.4);
+            text-align: right;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .notebook-textarea {
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            border: none;
+            resize: none;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.1rem;
+            line-height: 1.6;
+            color: #111111;
+            outline: none;
+            /* Simulación de líneas de libreta */
+            background-image: linear-gradient(rgba(0,0,0,0.06) 1px, transparent 1px);
+            background-size: 100% 1.6rem;
+        }
+
+        /* --- ESTADOS DE VOLTEO (Clases dinámicas) --- */
+        .page.flipped {
+            transform: rotateY(-180deg);
+            z-index: 10;
+        }
+
+        /* --- CONTROLES DE NAVEGACIÓN --- */
+        .controls {
+            margin-top: 30px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            z-index: 200;
+        }
+
+        .btn {
+            background-color: #333333;
+            color: #ffffff;
+            border: 1px solid #444444;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #e67e22; /* Toque sutil de color naranja al pasar el cursor */
+            border-color: #e67e22;
+        }
+
+        .info-box {
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="notebook-container" id="notebook">
+        </div>
+
+    <div class="controls">
+        <button class="btn" id="prevBtn">← Anterior</button>
+        <span class="info-box" id="pageIndicator">Pág. 1 / 60</span>
+        <button class="btn" id="nextBtn">Siguiente →</button>
+    </div>
+
+    <script>
+        const TOTAL_PAGES = 60;
+        const notebook = document.getElementById('notebook');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const pageIndicator = document.getElementById('pageIndicator');
+        
+        let currentPageIndex = 0;
+
+        // --- PALETA DE COLORES (Suaves/Pasteles para que se pueda leer bien el texto negro) ---
+        const colors = [
+            '#fff5eb', // Bloque 1 (Hojas 1-15): Naranja/Crema muy suave
+            '#e8f8f5', // Bloque 2 (Hojas 16-30): Verde menta claro
+            '#fef9e7', // Bloque 3 (Hojas 31-45): Amarillo pastel
+            '#f5eef8'  // Bloque 4 (Hojas 46-60): Violeta/Lila muy claro
+        ];
+
+        // --- FUNCIÓN PARA ASIGNAR COLOR SEGÚN LA PÁGINA ---
+        function getColorForPage(pageNumber) {
+            if (pageNumber <= 15) return colors[0];
+            if (pageNumber <= 30) return colors[1];
+            if (pageNumber <= 45) return colors[2];
+            return colors[3];
+        }
+
+        // --- GENERACIÓN DINÁMICA DE LAS HOJAS ---
+        // Generamos pares de páginas físicas (cada hoja física tiene 2 páginas: frente y vuelta)
+        // Para simplificar la escritura, haremos 60 hojas físicas consecutivas.
+        for (let i = 1; i <= TOTAL_PAGES; i++) {
+            const pageColor = getColorForPage(i);
+            
+            const pageElement = document.createElement('div');
+            pageElement.className = 'page';
+            pageElement.style.zIndex = TOTAL_PAGES - i; // Orden de apilamiento inicial
+
+            // Recuperamos texto guardado si existe
+            const savedText = localStorage.getItem(`notebook_page_${i}`) || '';
+
+            pageElement.innerHTML = `
+                <div class="page-face page-front" style="background-color: ${pageColor};">
+                    <div class="page-number">Hogha ${i}</div>
+                    <textarea class="notebook-textarea" data-page="${i}" placeholder="Escribe algo aquí...">${savedText}</textarea>
+                </div>
+                <div class="page-face page-back" style="background-color: ${pageColor};">
+                    <div class="page-number" style="text-align: left;">${i}</div>
+                    <div style="color: rgba(0,0,0,0.1); margin-top: 50px; font-style: italic; text-align:center;">Reverso de la hoja</div>
+                </div>
+            `;
+
+            notebook.appendChild(pageElement);
+        }
+
+        const pages = document.querySelectorAll('.page');
+
+        // --- LÓGICA DE CONTROL Y NAVEGACIÓN ---
+        function updateBook() {
+            pages.forEach((page, index) => {
+                if (index < currentPageIndex) {
+                    // Páginas ya volteadas
+                    page.classList.add('flipped');
+                    page.style.zIndex = 10 + index; 
+                } else {
+                    // Páginas por voltear
+                    page.classList.remove('flipped');
+                    page.style.zIndex = TOTAL_PAGES - index;
+                }
+            });
+
+            // Actualizar indicador inferior
+            pageIndicator.innerText = `Pág. ${Math.min(currentPageIndex + 1, TOTAL_PAGES)} / ${TOTAL_PAGES}`;
+        }
+
+        // --- EVENTOS DE LOS BOTONES ---
+        nextBtn.addEventListener('click', () => {
+            if (currentPageIndex < TOTAL_PAGES) {
+                currentPageIndex++;
+                updateBook();
+            }
+        });
+
+        prevBtn.addEventListener('click', () => {
+            if (currentPageIndex > 0) {
+                currentPageIndex--;
+                updateBook();
+            }
+        });
+
+        // --- AUTO-GUARDADO AL ESCRIBIR ---
+        notebook.addEventListener('input', (e) => {
+            if (e.target.classList.contains('notebook-textarea')) {
+                const pageNum = e.target.getAttribute('data-page');
+                const text = e.target.value;
+                localStorage.setItem(`notebook_page_${pageNum}`, text);
+            }
+        });
+
+        // Inicializar vista
+        updateBook();
+    </script>
+</body>
+</html>
